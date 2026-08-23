@@ -1,24 +1,25 @@
-# ReachInbox - Email Scheduler
+# ReachInbox Email Scheduler
 
-A full-stack email scheduling system built with React, Node.js, PostgreSQL, Redis, and BullMQ.
+A full-stack email scheduling application that allows users to authenticate with Google, upload lead emails through CSV, schedule email campaigns, control sending delays and hourly limits, and track scheduled, sent, and failed emails.
 
 ## Features
 
 - Google OAuth authentication
-- Email scheduling
 - CSV lead upload
-- Email validation
-- Duplicate email removal
+- Email validation and recipient detection
+- Email scheduling
 - Configurable delay between emails
-- Hourly sending limit
-- Background email processing using BullMQ
+- Configurable hourly sending limit
+- Background email processing with BullMQ
 - Redis-backed job queue
-- PostgreSQL persistence using Prisma
-- Email retry mechanism
-- Failed email tracking
+- Prisma ORM with PostgreSQL
+- Email status tracking
 - Scheduled email dashboard
 - Sent email dashboard
-- Ethereal email integration for testing
+- Failed email tracking
+- Campaign statistics
+- Responsive dashboard UI
+- Ethereal Email integration for safe email testing
 
 ## Tech Stack
 
@@ -27,24 +28,22 @@ A full-stack email scheduling system built with React, Node.js, PostgreSQL, Redi
 - React
 - TypeScript
 - Vite
-- Tailwind CSS
+- CSS
 
 ### Backend
 
 - Node.js
 - Express
 - TypeScript
-- Prisma ORM
+- Prisma
 - PostgreSQL
+- Passport.js
+- Google OAuth
 
-### Queue and Background Processing
+### Queue & Background Processing
 
 - Redis
 - BullMQ
-
-### Authentication
-
-- Google OAuth
 
 ### Email
 
@@ -54,33 +53,34 @@ A full-stack email scheduling system built with React, Node.js, PostgreSQL, Redi
 ## Architecture
 
 ```text
-                    ┌──────────────────┐
-                    │   React Frontend │
-                    │   TypeScript     │
-                    └────────┬─────────┘
-                             │
-                             │ HTTP
-                             ▼
-                    ┌──────────────────┐
-                    │ Express Backend  │
-                    │   REST APIs      │
-                    └───────┬──────────┘
-                            │
-                ┌───────────┴───────────┐
-                │                       │
-                ▼                       ▼
-       ┌────────────────┐      ┌────────────────┐
-       │   PostgreSQL   │      │ Redis / BullMQ │
-       │    Prisma      │      │   Job Queue    │
-       └────────────────┘      └───────┬────────┘
+                    ┌──────────────────────┐
+                    │      React UI        │
+                    │      Frontend        │
+                    └──────────┬───────────┘
+                               │
+                               │ REST API
+                               ▼
+                    ┌──────────────────────┐
+                    │    Express Backend   │
+                    │      TypeScript      │
+                    └───────┬───────┬──────┘
+                            │       │
+                            │       │
+                            ▼       ▼
+                    ┌──────────┐  ┌──────────┐
+                    │ Prisma   │  │  Redis   │
+                    │   ORM    │  │          │
+                    └────┬─────┘  └────┬─────┘
+                         │             │
+                         ▼             ▼
+                    PostgreSQL     BullMQ Queue
                                        │
                                        ▼
                               ┌─────────────────┐
                               │  Email Worker   │
-                              │   Nodemailer    │
+                              │                 │
+                              │ Nodemailer      │
                               └────────┬────────┘
                                        │
                                        ▼
-                              ┌─────────────────┐
-                              │ Ethereal SMTP   │
-                              └─────────────────┘
+                              Ethereal Email
