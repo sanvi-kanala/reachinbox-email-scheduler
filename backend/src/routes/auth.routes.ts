@@ -3,6 +3,9 @@ import passport from "../config/passport";
 
 const router = Router();
 
+const FRONTEND_URL =
+  process.env.FRONTEND_URL || "http://localhost:5173";
+
 // Start Google login
 router.get(
   "/google",
@@ -15,10 +18,10 @@ router.get(
 router.get(
   "/google/callback",
   passport.authenticate("google", {
-    failureRedirect: "http://localhost:5173/login",
+    failureRedirect: `${FRONTEND_URL}/login`,
   }),
   (_req, res) => {
-    res.redirect("http://localhost:5173/dashboard");
+    res.redirect(`${FRONTEND_URL}/dashboard`);
   }
 );
 
