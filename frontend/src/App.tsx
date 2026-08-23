@@ -1,9 +1,7 @@
-import {
-  ChangeEvent,
-  FormEvent,
-  useEffect,
-  useState,
-} from "react";
+import { useEffect, useMemo, useState } from "react";
+import "./App.css";
+
+const API_URL = "http://localhost:5000";
 
 type User = {
   id: string;
@@ -16,72 +14,44 @@ type Email = {
   id: string;
   recipient: string;
   subject: string;
-  body?: string;
+  status: string;
   scheduledAt?: string;
   sentAt?: string;
-  status: string;
 };
-
-const API_URL = "http://localhost:5000";
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
-
-  const [activeTab, setActiveTab] = useState<
-    "scheduled" | "sent"
-  >("scheduled");
-
   const [emails, setEmails] = useState<Email[]>([]);
+  const [activePage, setActivePage] = useState("dashboard");
   const [loading, setLoading] = useState(true);
-
-  const [showCompose, setShowCompose] =
-    useState(false);
+  const [search, setSearch] = useState("");
+  const [showCompose, setShowCompose] = useState(false);
 
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
+  const [recipients, setRecipients] = useState<string[]>([]);
+  const [startTime, setStartTime] = useState("");
+  const [delay, setDelay] = useState(2000);
+  const [hourlyLimit, setHourlyLimit] = useState(100);
 
-  const [recipients, setRecipients] =
-    useState<string[]>([]);
-
-  const [invalidCount, setInvalidCount] =
-    useState(0);
-
-  const [duplicateCount, setDuplicateCount] =
-    useState(0);
-
-  const [startTime, setStartTime] =
-    useState("");
-
-  const [delayBetweenEmails, setDelayBetweenEmails] =
-    useState(2000);
-
-  const [hourlyLimit, setHourlyLimit] =
-    useState(100);
-
-  const [scheduling, setScheduling] =
-    useState(false);
-
-  const [scheduleMessage, setScheduleMessage] =
-    useState("");
+  const [message, setMessage] = useState("");
+  const [scheduling, setScheduling] = useState(false);
 
   useEffect(() => {
-    fetchUser();
+    loadUser();
   }, []);
 
   useEffect(() => {
     if (user) {
-      fetchEmails();
+      loadEmails();
     }
-  }, [user, activeTab]);
+  }, [user, activePage]);
 
-  async function fetchUser() {
+  async function loadUser() {
     try {
-      const response = await fetch(
-        `${API_URL}/auth/me`,
-        {
-          credentials: "include",
-        }
-      );
+      const response = await fetch(`${API_URL}/auth/me`, {
+        credentials: "include",
+      });
 
       if (response.ok) {
         const data = await response.json();
@@ -94,16 +64,15 @@ function App() {
     }
   }
 
-  async function fetchEmails() {
+  async function loadEmails() {
     if (!user) return;
 
     try {
-      setLoading(true);
+      let endpoint = "scheduled";
 
-      const endpoint =
-        activeTab === "scheduled"
-          ? "scheduled"
-          : "sent";
+      if (activePage === "sent") {
+        endpoint = "sent";
+      }
 
       const response = await fetch(
         `${API_URL}/api/emails/${endpoint}?userId=${user.id}`,
@@ -112,49 +81,34 @@ function App() {
         }
       );
 
-      if (!response.ok) {
-        throw new Error(
-          "Failed to fetch emails"
-        );
+      if (response.ok) {
+        const data = await response.json();
+        setEmails(Array.isArray(data) ? data : []);
       }
-
-      const data = await response.json();
-
-      setEmails(
-        Array.isArray(data) ? data : []
-      );
     } catch (error) {
       console.error(error);
-      setEmails([]);
-    } finally {
-      setLoading(false);
     }
   }
 
   function login() {
-    window.location.href =
-      `${API_URL}/auth/google`;
+    window.location.href = `${API_URL}/auth/google`;
   }
 
   async function logout() {
     try {
-      await fetch(
-        `${API_URL}/auth/logout`,
-        {
-          method: "POST",
-          credentials: "include",
-        }
-      );
+      await fetch(`${API_URL}/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
     } catch (error) {
       console.error(error);
     }
 
     setUser(null);
-    setEmails([]);
   }
 
-  function handleFileUpload(
-    event: ChangeEvent<HTMLInputElement>
+  function handleCSV(
+    event: React.ChangeEvent<HTMLInputElement>
   ) {
     const file = event.target.files?.[0];
 
@@ -163,117 +117,64 @@ function App() {
     const reader = new FileReader();
 
     reader.onload = (e) => {
-      const text = String(
-        e.target?.result || ""
-      );
+      const text = String(e.target?.result || "");
 
       const values = text
         .split(/[\n,;]+/)
-        .map((value) =>
-          value
-            .trim()
-            .replace(/^["']|["']$/g, "")
-        )
+        .map((x) => x.trim())
         .filter(Boolean);
 
       const emailRegex =
         /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-      const validEmails: string[] = [];
-      let invalid = 0;
+      const valid = values.filter(
+        (email) =>
+          email.toLowerCase() !== "email" &&
+          emailRegex.test(email)
+      );
 
-      for (const value of values) {
-        // Ignore common CSV headers
-        if (
-          value.toLowerCase() ===
-            "email" ||
-          value.toLowerCase() ===
-            "email address"
-        ) {
-          continue;
-        }
-
-        const email = value.toLowerCase();
-
-        if (emailRegex.test(email)) {
-          validEmails.push(email);
-        } else {
-          invalid++;
-        }
-      }
-
-      const uniqueEmails = [
-        ...new Set(validEmails),
-      ];
-
-      const duplicates =
-        validEmails.length -
-        uniqueEmails.length;
-
-      setRecipients(uniqueEmails);
-      setInvalidCount(invalid);
-      setDuplicateCount(duplicates);
+      setRecipients([...new Set(valid)]);
     };
 
     reader.readAsText(file);
   }
 
-  async function handleSchedule(
-    event: FormEvent
+  async function scheduleEmails(
+    event: React.FormEvent
   ) {
     event.preventDefault();
 
     if (!user) return;
 
+    if (!recipients.length) {
+      setMessage("Please upload a CSV file.");
+      return;
+    }
+
     if (!subject.trim()) {
-      setScheduleMessage(
-        "Please enter a subject."
-      );
+      setMessage("Please enter a subject.");
       return;
     }
 
     if (!body.trim()) {
-      setScheduleMessage(
-        "Please enter the email body."
-      );
-      return;
-    }
-
-    if (recipients.length === 0) {
-      setScheduleMessage(
-        "Please upload a CSV containing valid email addresses."
-      );
+      setMessage("Please enter a message.");
       return;
     }
 
     if (!startTime) {
-      setScheduleMessage(
-        "Please select a start time."
-      );
-      return;
-    }
-
-    const firstTime = new Date(startTime);
-
-    if (firstTime.getTime() <= Date.now()) {
-      setScheduleMessage(
-        "Please select a future start time."
-      );
+      setMessage("Please select a start time.");
       return;
     }
 
     try {
       setScheduling(true);
-      setScheduleMessage("");
+      setMessage("");
 
-      for (
-        let i = 0;
-        i < recipients.length;
-        i++
-      ) {
+      const firstTime = new Date(startTime);
+
+      for (let i = 0; i < recipients.length; i++) {
         const scheduledAt = new Date(
-          firstTime.getTime() +
-            i * delayBetweenEmails
+          firstTime.getTime() + i * delay
         );
 
         const response = await fetch(
@@ -281,298 +182,740 @@ function App() {
           {
             method: "POST",
             headers: {
-              "Content-Type":
-                "application/json",
+              "Content-Type": "application/json",
             },
             credentials: "include",
             body: JSON.stringify({
               recipient: recipients[i],
-              subject: subject.trim(),
-              body: body.trim(),
-              scheduledAt:
-                scheduledAt.toISOString(),
+              subject,
+              body,
+              scheduledAt: scheduledAt.toISOString(),
               userId: user.id,
-              delayBetweenEmails,
               hourlyLimit,
+              delayBetweenEmails: delay,
             }),
           }
         );
 
-        const result = await response.json();
-
         if (!response.ok) {
+          const data = await response.json();
           throw new Error(
-            result.message ||
-              "Failed to schedule email"
+            data.message || "Scheduling failed"
           );
         }
       }
 
-      setScheduleMessage(
-        `${recipients.length} email${
-          recipients.length !== 1
-            ? "s"
-            : ""
-        } scheduled successfully!`
+      setMessage(
+        `${recipients.length} email(s) scheduled successfully!`
       );
 
       setSubject("");
       setBody("");
       setRecipients([]);
-      setInvalidCount(0);
-      setDuplicateCount(0);
       setStartTime("");
-      setDelayBetweenEmails(2000);
-      setHourlyLimit(100);
 
-      await fetchEmails();
+      await loadEmails();
 
       setTimeout(() => {
         setShowCompose(false);
-        setScheduleMessage("");
+        setMessage("");
       }, 1500);
     } catch (error) {
-      console.error(
-        "Scheduling error:",
-        error
-      );
-
-      setScheduleMessage(
+      setMessage(
         error instanceof Error
           ? error.message
-          : "Something went wrong while scheduling the emails."
+          : "Something went wrong."
       );
     } finally {
       setScheduling(false);
     }
   }
 
-  if (loading && !user) {
+  const scheduled = emails.filter(
+    (email) =>
+      email.status === "SCHEDULED" ||
+      email.status === "PROCESSING"
+  ).length;
+
+  const sent = emails.filter(
+    (email) => email.status === "SENT"
+  ).length;
+
+  const failed = emails.filter(
+    (email) => email.status === "FAILED"
+  ).length;
+
+  const total = emails.length;
+
+  const successRate =
+    total === 0
+      ? 0
+      : Math.round((sent / total) * 100);
+
+  const filteredEmails = useMemo(() => {
+    const query = search.toLowerCase();
+
+    return emails.filter(
+      (email) =>
+        email.recipient
+          .toLowerCase()
+          .includes(query) ||
+        email.subject
+          .toLowerCase()
+          .includes(query)
+    );
+  }, [emails, search]);
+
+  function formatDate(value?: string) {
+    if (!value) return "—";
+
+    return new Date(value).toLocaleString([], {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  function statusClass(status: string) {
+    if (status === "SENT") return "sent";
+    if (status === "FAILED") return "failed";
+    if (status === "PROCESSING") return "processing";
+    return "scheduled";
+  }
+
+  if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50">
-        <p className="text-gray-500">
-          Loading ReachInbox...
-        </p>
+      <div className="loading-page">
+        <div className="loader-logo">R</div>
+        <div className="loader" />
       </div>
     );
   }
 
   if (!user) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4">
-        <div className="w-full max-w-md rounded-2xl bg-white p-8 text-center shadow-2xl">
-          <div className="mx-auto mb-6 flex h-14 w-14 items-center justify-center rounded-xl bg-blue-600 text-2xl font-bold text-white">
-            R
-          </div>
+      <div className="login-page">
+        <div className="login-box">
+          <div className="logo-large">R</div>
 
-          <h1 className="text-3xl font-bold text-gray-900">
-            ReachInbox
-          </h1>
+          <h1>ReachInbox</h1>
 
-          <p className="mt-2 text-gray-500">
-            Email scheduling made simple.
+          <p>
+            Schedule and manage your email
+            campaigns with ease.
           </p>
 
           <button
+            className="google-button"
             onClick={login}
-            className="mt-8 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 font-medium text-gray-700 hover:bg-gray-50"
           >
+            <b>G</b>
             Continue with Google
+            <span>→</span>
           </button>
+
+          <small>
+            Secure Google authentication
+          </small>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="border-b bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600 font-bold text-white">
-              R
+    <div className="dashboard">
+      {/* SIDEBAR */}
+      <aside className="sidebar">
+        <div className="brand">
+          <div className="brand-logo">R</div>
+
+          <div>
+            <strong>ReachInbox</strong>
+            <span>Email Scheduler</span>
+          </div>
+        </div>
+
+        <nav>
+          <button
+            className={
+              activePage === "dashboard"
+                ? "nav-link active"
+                : "nav-link"
+            }
+            onClick={() =>
+              setActivePage("dashboard")
+            }
+          >
+            <span>⌂</span>
+            Dashboard
+          </button>
+
+          <div className="nav-heading">
+            CAMPAIGNS
+          </div>
+
+          <button
+            className={
+              activePage === "scheduled"
+                ? "nav-link active"
+                : "nav-link"
+            }
+            onClick={() =>
+              setActivePage("scheduled")
+            }
+          >
+            <span>◷</span>
+            Scheduled Emails
+
+            <em>{scheduled}</em>
+          </button>
+
+          <button
+            className={
+              activePage === "sent"
+                ? "nav-link active"
+                : "nav-link"
+            }
+            onClick={() =>
+              setActivePage("sent")
+            }
+          >
+            <span>➤</span>
+            Sent Emails
+
+            <em>{sent}</em>
+          </button>
+
+          <button className="nav-link">
+            <span>!</span>
+            Failed Emails
+
+            <em>{failed}</em>
+          </button>
+
+          <div className="sidebar-divider" />
+
+          <button
+            className="nav-link create-link"
+            onClick={() =>
+              setShowCompose(true)
+            }
+          >
+            <span>+</span>
+            Create Campaign
+          </button>
+
+          <div className="nav-heading">
+            ANALYTICS
+          </div>
+
+          <button className="nav-link">
+            <span>▥</span>
+            Overview
+          </button>
+
+          <button className="nav-link">
+            <span>⌁</span>
+            Performance
+          </button>
+
+          <div className="nav-heading">
+            SETTINGS
+          </div>
+
+          <button className="nav-link">
+            <span>♙</span>
+            Account
+          </button>
+
+          <button
+            className="nav-link"
+            onClick={logout}
+          >
+            <span>↪</span>
+            Logout
+          </button>
+        </nav>
+
+        <div className="sidebar-bottom">
+          <div className="system-status">
+            <div className="status-top">
+              <span className="online-dot" />
+              System Status
             </div>
 
-            <div>
-              <h1 className="font-bold text-gray-900">
-                ReachInbox
-              </h1>
+            <strong>
+              All systems operational
+            </strong>
 
-              <p className="text-xs text-gray-500">
-                Email Scheduler
-              </p>
+            <small>
+              Worker & queue running
+            </small>
+
+            <div className="pulse-line">
+              〰〰〰
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
-            {user.avatar && (
+          <div className="profile">
+            {user.avatar ? (
               <img
                 src={user.avatar}
-                alt={user.name}
-                className="h-10 w-10 rounded-full"
+                alt=""
               />
+            ) : (
+              <div className="profile-avatar">
+                {user.name
+                  .charAt(0)
+                  .toUpperCase()}
+              </div>
             )}
 
-            <div className="hidden text-right sm:block">
-              <p className="text-sm font-medium text-gray-900">
-                {user.name}
-              </p>
+            <div>
+              <strong>{user.name}</strong>
+              <span>{user.email}</span>
+            </div>
 
-              <p className="text-xs text-gray-500">
-                {user.email}
-              </p>
+            <button>⋮</button>
+          </div>
+        </div>
+      </aside>
+
+      {/* MAIN */}
+      <main className="main">
+        <header className="topbar">
+          <div className="mobile-logo">
+            R
+          </div>
+
+          <div className="topbar-right">
+            <div className="today">
+              <span>▣</span>
+
+              {new Date().toLocaleDateString(
+                [],
+                {
+                  weekday: "long",
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                }
+              )}
             </div>
 
             <button
-              onClick={logout}
-              className="rounded-lg border px-3 py-2 text-sm text-gray-600 hover:bg-gray-50"
+              className="create-button"
+              onClick={() =>
+                setShowCompose(true)
+              }
             >
-              Logout
+              <span>+</span>
+              Create Campaign
             </button>
           </div>
-        </div>
-      </header>
+        </header>
 
-      <main className="mx-auto max-w-7xl px-6 py-8">
-        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900">
-              Email Dashboard
-            </h2>
+        <div className="content">
+          {/* HERO */}
+          <section className="welcome">
+            <div>
+              <h1>
+                Good morning,{" "}
+                {user.name.split(" ")[0]}! 👋
+              </h1>
 
-            <p className="mt-1 text-sm text-gray-500">
-              Manage your scheduled and sent emails.
-            </p>
-          </div>
-
-          <button
-            onClick={() => {
-              setShowCompose(true);
-              setScheduleMessage("");
-            }}
-            className="rounded-lg bg-blue-600 px-5 py-3 font-medium text-white hover:bg-blue-700"
-          >
-            + Compose New Email
-          </button>
-        </div>
-
-        <div className="mb-6 flex gap-2 border-b">
-          <button
-            onClick={() =>
-              setActiveTab("scheduled")
-            }
-            className={`px-4 py-3 text-sm font-medium ${
-              activeTab === "scheduled"
-                ? "border-b-2 border-blue-600 text-blue-600"
-                : "text-gray-500"
-            }`}
-          >
-            Scheduled Emails
-          </button>
-
-          <button
-            onClick={() =>
-              setActiveTab("sent")
-            }
-            className={`px-4 py-3 text-sm font-medium ${
-              activeTab === "sent"
-                ? "border-b-2 border-blue-600 text-blue-600"
-                : "text-gray-500"
-            }`}
-          >
-            Sent Emails
-          </button>
-        </div>
-
-        <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
-          {loading ? (
-            <div className="p-10 text-center text-gray-500">
-              Loading emails...
-            </div>
-          ) : emails.length === 0 ? (
-            <div className="p-12 text-center">
-              <p className="font-medium text-gray-700">
-                No emails found
-              </p>
-
-              <p className="mt-1 text-sm text-gray-500">
-                Your {activeTab} emails will appear
-                here.
+              <p>
+                Here's what's happening with
+                your email campaigns.
               </p>
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="border-b bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-4 font-semibold text-gray-600">
-                      Recipient
-                    </th>
+          </section>
 
-                    <th className="px-6 py-4 font-semibold text-gray-600">
-                      Subject
-                    </th>
+          {/* STATS */}
+          <section className="stats-grid">
+            <div className="stat-card">
+              <div className="stat-icon purple">
+                ✉
+              </div>
 
-                    <th className="px-6 py-4 font-semibold text-gray-600">
-                      {activeTab === "scheduled"
-                        ? "Scheduled Time"
-                        : "Sent Time"}
-                    </th>
+              <div className="stat-info">
+                <span>Total Emails</span>
+                <strong>{total}</strong>
+                <small>
+                  All campaign emails
+                </small>
+              </div>
 
-                    <th className="px-6 py-4 font-semibold text-gray-600">
-                      Status
-                    </th>
-                  </tr>
-                </thead>
+              <div className="mini-chart purple-chart">
+                〰〰
+              </div>
+            </div>
 
-                <tbody>
-                  {emails.map((email) => (
-                    <tr
-                      key={email.id}
-                      className="border-b last:border-0 hover:bg-gray-50"
-                    >
-                      <td className="px-6 py-4">
-                        {email.recipient}
-                      </td>
+            <div className="stat-card">
+              <div className="stat-icon blue">
+                ◷
+              </div>
 
-                      <td className="px-6 py-4 font-medium">
-                        {email.subject}
-                      </td>
+              <div className="stat-info">
+                <span>Scheduled</span>
+                <strong>{scheduled}</strong>
+                <small>
+                  Waiting to be sent
+                </small>
+              </div>
 
-                      <td className="px-6 py-4 text-gray-500">
-                        {new Date(
-                          activeTab ===
-                          "scheduled"
-                            ? email.scheduledAt!
-                            : email.sentAt!
-                        ).toLocaleString()}
-                      </td>
+              <div className="mini-chart blue-chart">
+                〰〰
+              </div>
+            </div>
 
-                      <td className="px-6 py-4">
-                        <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700">
-                          {email.status}
-                        </span>
-                      </td>
+            <div className="stat-card">
+              <div className="stat-icon green">
+                ✓
+              </div>
+
+              <div className="stat-info">
+                <span>Sent</span>
+                <strong>{sent}</strong>
+                <small>
+                  Successfully delivered
+                </small>
+              </div>
+
+              <div className="mini-chart green-chart">
+                〰〰
+              </div>
+            </div>
+
+            <div className="stat-card">
+              <div className="stat-icon red">
+                ×
+              </div>
+
+              <div className="stat-info">
+                <span>Success Rate</span>
+                <strong>{successRate}%</strong>
+                <small>
+                  Delivery success rate
+                </small>
+              </div>
+
+              <div className="mini-chart red-chart">
+                〰〰
+              </div>
+            </div>
+          </section>
+
+          {/* ANALYTICS */}
+          <section className="analytics-grid">
+            <div className="performance-card">
+              <h2>
+                Campaign Performance
+              </h2>
+
+              <div className="performance-content">
+                <div
+                  className="donut"
+                  style={{
+                    background: `conic-gradient(
+                      #635bff ${successRate}%,
+                      #eef0ff ${successRate}% 100%
+                    )`,
+                  }}
+                >
+                  <div>
+                    <strong>
+                      {successRate}%
+                    </strong>
+
+                    <span>
+                      Success Rate
+                    </span>
+                  </div>
+                </div>
+
+                <div className="legend">
+                  <div>
+                    <span className="green-dot" />
+                    <strong>Sent</strong>
+                    <small>
+                      {sent} (
+                      {total
+                        ? Math.round(
+                            (sent /
+                              total) *
+                              100
+                          )
+                        : 0}
+                      %)
+                    </small>
+                  </div>
+
+                  <div>
+                    <span className="blue-dot" />
+                    <strong>Scheduled</strong>
+                    <small>
+                      {scheduled} (
+                      {total
+                        ? Math.round(
+                            (scheduled /
+                              total) *
+                              100
+                          )
+                        : 0}
+                      %)
+                    </small>
+                  </div>
+
+                  <div>
+                    <span className="red-dot" />
+                    <strong>Failed</strong>
+                    <small>
+                      {failed} (
+                      {total
+                        ? Math.round(
+                            (failed /
+                              total) *
+                              100
+                          )
+                        : 0}
+                      %)
+                    </small>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="campaign-cta">
+              <div>
+                <h2>
+                  Ready to reach your
+                  leads?
+                </h2>
+
+                <p>
+                  Create a new campaign and
+                  schedule emails in minutes.
+                  Upload your leads, write your
+                  message, and let ReachInbox do
+                  the rest.
+                </p>
+
+                <button
+                  onClick={() =>
+                    setShowCompose(true)
+                  }
+                >
+                  Create New Campaign →
+                </button>
+              </div>
+
+              <div className="paper-plane">
+                ➤
+              </div>
+            </div>
+          </section>
+
+          {/* TABLE */}
+          <section className="email-card">
+            <div className="email-card-header">
+              <div>
+                <h2>
+                  {activePage === "sent"
+                    ? "Sent Emails"
+                    : "Scheduled Emails"}
+                </h2>
+
+                <p>
+                  View and manage all your
+                  scheduled email campaigns
+                </p>
+              </div>
+
+              <button
+                className="refresh"
+                onClick={loadEmails}
+              >
+                ↻ Refresh
+              </button>
+            </div>
+
+            <div className="table-toolbar">
+              <div className="search-box">
+                <span>⌕</span>
+
+                <input
+                  placeholder="Search recipient or subject..."
+                  value={search}
+                  onChange={(e) =>
+                    setSearch(
+                      e.target.value
+                    )
+                  }
+                />
+              </div>
+            </div>
+
+            {filteredEmails.length === 0 ? (
+              <div className="empty-state">
+                <div>✉</div>
+
+                <h3>
+                  No emails found
+                </h3>
+
+                <p>
+                  Create a campaign to get
+                  started.
+                </p>
+
+                <button
+                  onClick={() =>
+                    setShowCompose(true)
+                  }
+                >
+                  Create Campaign
+                </button>
+              </div>
+            ) : (
+              <div className="table-wrapper">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>RECIPIENT</th>
+                      <th>SUBJECT</th>
+                      <th>
+                        {activePage === "sent"
+                          ? "SENT"
+                          : "SCHEDULED"}
+                      </th>
+                      <th>STATUS</th>
+                      <th />
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  </thead>
+
+                  <tbody>
+                    {filteredEmails.map(
+                      (email) => (
+                        <tr key={email.id}>
+                          <td>
+                            <div className="recipient">
+                              <div className="recipient-avatar">
+                                {email.recipient
+                                  .charAt(0)
+                                  .toUpperCase()}
+                              </div>
+
+                              <span>
+                                {
+                                  email.recipient
+                                }
+                              </span>
+                            </div>
+                          </td>
+
+                          <td>
+                            <span className="subject">
+                              {email.subject}
+                            </span>
+                          </td>
+
+                          <td>
+                            <div className="date-cell">
+                              <span>▣</span>
+
+                              {formatDate(
+                                activePage ===
+                                  "sent"
+                                  ? email.sentAt
+                                  : email.scheduledAt
+                              )}
+                            </div>
+                          </td>
+
+                          <td>
+                            <span
+                              className={`status-badge ${statusClass(
+                                email.status
+                              )}`}
+                            >
+                              <i />
+                              {
+                                email.status
+                              }
+                            </span>
+                          </td>
+
+                          <td>
+                            <button className="more">
+                              ⋯
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {filteredEmails.length > 0 && (
+              <div className="table-footer">
+                <span>
+                  Showing 1 to{" "}
+                  {filteredEmails.length} of{" "}
+                  {filteredEmails.length} email
+                  {filteredEmails.length !== 1
+                    ? "s"
+                    : ""}
+                </span>
+
+                <div>
+                  <button>‹</button>
+                  <button className="page">
+                    1
+                  </button>
+                  <button>›</button>
+                </div>
+              </div>
+            )}
+          </section>
+
+          <footer>
+            © 2026 ReachInbox
+            <span>•</span>
+            All rights reserved
+          </footer>
         </div>
       </main>
 
+      {/* COMPOSE MODAL */}
       {showCompose && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="mb-6 flex items-center justify-between">
+        <div
+          className="modal-overlay"
+          onMouseDown={(e) => {
+            if (
+              e.target ===
+              e.currentTarget
+            ) {
+              setShowCompose(false);
+            }
+          }}
+        >
+          <div className="compose-modal">
+            <div className="compose-header">
               <div>
-                <h2 className="text-xl font-bold">
-                  Compose New Email
+                <span>NEW CAMPAIGN</span>
+
+                <h2>
+                  Create Campaign
                 </h2>
 
-                <p className="text-sm text-gray-500">
-                  Schedule emails to your leads.
+                <p>
+                  Set up your email campaign
+                  and schedule your leads.
                 </p>
               </div>
 
@@ -580,137 +923,121 @@ function App() {
                 onClick={() =>
                   setShowCompose(false)
                 }
-                className="text-2xl text-gray-400"
               >
                 ×
               </button>
             </div>
 
             <form
-              onSubmit={handleSchedule}
-              className="space-y-5"
+              className="compose-form"
+              onSubmit={scheduleEmails}
             >
-              <div>
-                <label className="mb-2 block text-sm font-medium">
-                  Subject
-                </label>
+              <label>
+                Upload Leads CSV
+              </label>
 
-                <input
-                  type="text"
-                  value={subject}
-                  onChange={(e) =>
-                    setSubject(e.target.value)
-                  }
-                  placeholder="Enter email subject"
-                  className="w-full rounded-lg border px-4 py-3"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium">
-                  Email Body
-                </label>
-
-                <textarea
-                  value={body}
-                  onChange={(e) =>
-                    setBody(e.target.value)
-                  }
-                  placeholder="Write your email..."
-                  rows={6}
-                  className="w-full rounded-lg border px-4 py-3"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium">
-                  Upload Leads CSV
-                </label>
-
+              <div className="upload-area">
                 <input
                   type="file"
                   accept=".csv,.txt"
-                  onChange={handleFileUpload}
-                  className="w-full rounded-lg border p-3"
+                  onChange={handleCSV}
                 />
 
+                <div className="upload-icon">
+                  ↑
+                </div>
+
+                <strong>
+                  Drop your CSV here
+                </strong>
+
+                <span>
+                  or click to browse
+                </span>
+
                 {recipients.length > 0 && (
-                  <div className="mt-3 rounded-lg bg-green-50 p-3 text-sm text-green-700">
-                    <p className="font-medium">
-                      ✓ {recipients.length} valid
-                      email
-                      {recipients.length !== 1
-                        ? "s"
-                        : ""}{" "}
-                      detected
-                    </p>
-
-                    {invalidCount > 0 && (
-                      <p className="mt-1 text-xs">
-                        {invalidCount} invalid
-                        entr
-                        {invalidCount === 1
-                          ? "y"
-                          : "ies"}{" "}
-                        ignored
-                      </p>
-                    )}
-
-                    {duplicateCount > 0 && (
-                      <p className="mt-1 text-xs">
-                        {duplicateCount} duplicate
-                        {duplicateCount === 1
-                          ? ""
-                          : "s"}{" "}
-                        removed
-                      </p>
-                    )}
+                  <div className="upload-success">
+                    ✓ {recipients.length} email
+                    {recipients.length !== 1
+                      ? "s"
+                      : ""}{" "}
+                    detected
                   </div>
                 )}
               </div>
 
-              <div>
-                <label className="mb-2 block text-sm font-medium">
-                  Start Time
-                </label>
+              <label>
+                Subject
+              </label>
 
-                <input
-                  type="datetime-local"
-                  value={startTime}
-                  onChange={(e) =>
-                    setStartTime(e.target.value)
-                  }
-                  className="w-full rounded-lg border px-4 py-3"
-                />
-              </div>
+              <input
+                className="form-input"
+                value={subject}
+                onChange={(e) =>
+                  setSubject(
+                    e.target.value
+                  )
+                }
+                placeholder="Enter email subject"
+              />
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <label>
+                Message
+              </label>
+
+              <textarea
+                className="form-input"
+                rows={6}
+                value={body}
+                onChange={(e) =>
+                  setBody(e.target.value)
+                }
+                placeholder="Write your email..."
+              />
+
+              <div className="form-grid">
                 <div>
-                  <label className="mb-2 block text-sm font-medium">
-                    Delay Between Emails
+                  <label>
+                    Start Time
+                  </label>
+
+                  <input
+                    className="form-input"
+                    type="datetime-local"
+                    value={startTime}
+                    onChange={(e) =>
+                      setStartTime(
+                        e.target.value
+                      )
+                    }
+                  />
+                </div>
+
+                <div>
+                  <label>
+                    Delay
                   </label>
 
                   <select
-                    value={delayBetweenEmails}
+                    className="form-input"
+                    value={delay}
                     onChange={(e) =>
-                      setDelayBetweenEmails(
-                        Number(e.target.value)
+                      setDelay(
+                        Number(
+                          e.target.value
+                        )
                       )
                     }
-                    className="w-full rounded-lg border px-4 py-3"
                   >
                     <option value={2000}>
                       2 seconds
                     </option>
-
                     <option value={5000}>
                       5 seconds
                     </option>
-
                     <option value={10000}>
                       10 seconds
                     </option>
-
                     <option value={30000}>
                       30 seconds
                     </option>
@@ -718,80 +1045,58 @@ function App() {
                 </div>
 
                 <div>
-                  <label className="mb-2 block text-sm font-medium">
+                  <label>
                     Hourly Limit
                   </label>
 
                   <input
+                    className="form-input"
                     type="number"
                     min="1"
                     value={hourlyLimit}
                     onChange={(e) =>
                       setHourlyLimit(
-                        Number(e.target.value)
+                        Number(
+                          e.target.value
+                        )
                       )
                     }
-                    className="w-full rounded-lg border px-4 py-3"
                   />
                 </div>
               </div>
 
-              {recipients.length > 0 &&
-                startTime && (
-                  <div className="rounded-lg bg-blue-50 p-4 text-sm text-blue-700">
-                    <p>
-                      <strong>
-                        {recipients.length}
-                      </strong>{" "}
-                      emails will be scheduled.
-                    </p>
-
-                    <p>
-                      First email:{" "}
-                      {new Date(
-                        startTime
-                      ).toLocaleString()}
-                    </p>
-
-                    <p>
-                      Delay:{" "}
-                      {delayBetweenEmails /
-                        1000}{" "}
-                      seconds
-                    </p>
-
-                    <p>
-                      Hourly limit:{" "}
-                      {hourlyLimit}
-                    </p>
-                  </div>
-                )}
-
-              {scheduleMessage && (
-                <div className="rounded-lg bg-gray-50 p-3 text-sm">
-                  {scheduleMessage}
+              {message && (
+                <div
+                  className={
+                    message.includes(
+                      "successfully"
+                    )
+                      ? "form-message success"
+                      : "form-message error"
+                  }
+                >
+                  {message}
                 </div>
               )}
 
-              <div className="flex justify-end gap-3">
+              <div className="compose-footer">
                 <button
                   type="button"
+                  className="cancel-button"
                   onClick={() =>
                     setShowCompose(false)
                   }
-                  className="rounded-lg border px-5 py-3"
                 >
                   Cancel
                 </button>
 
                 <button
-                  type="submit"
+                  className="schedule-button"
                   disabled={scheduling}
-                  className="rounded-lg bg-blue-600 px-5 py-3 font-medium text-white disabled:opacity-50"
                 >
                   {scheduling
                     ? "Scheduling..."
-                    : "Schedule Emails"}
+                    : "Schedule Campaign →"}
                 </button>
               </div>
             </form>
