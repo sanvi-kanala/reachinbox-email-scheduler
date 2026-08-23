@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 
-const API_URL = "http://localhost:5000";
+const API_URL =
+  import.meta.env.VITE_API_URL ||
+  "http://localhost:5000";
 
 type User = {
   id: string;
@@ -383,20 +385,29 @@ function App() {
             `${API_URL}/api/emails/schedule`,
             {
               method: "POST",
+
               headers: {
                 "Content-Type":
                   "application/json",
               },
+
               credentials: "include",
+
               body: JSON.stringify({
                 recipient:
                   recipients[i],
+
                 subject,
+
                 body,
+
                 scheduledAt:
                   scheduledAt.toISOString(),
+
                 userId: user.id,
+
                 hourlyLimit,
+
                 delayBetweenEmails:
                   delay,
               }),
@@ -1068,9 +1079,11 @@ function App() {
                   <div>
 
                     <span className="green-dot" />
+
                     <strong>
                       Sent
                     </strong>
+
                     <small>
                       {sent}
                     </small>
@@ -1080,9 +1093,11 @@ function App() {
                   <div>
 
                     <span className="blue-dot" />
+
                     <strong>
                       Scheduled
                     </strong>
+
                     <small>
                       {scheduled}
                     </small>
@@ -1092,9 +1107,11 @@ function App() {
                   <div>
 
                     <span className="red-dot" />
+
                     <strong>
                       Failed
                     </strong>
+
                     <small>
                       {failed}
                     </small>
@@ -1440,13 +1457,9 @@ function App() {
           </section>
 
           <footer>
-
             © 2026 ReachInbox
-
             <span>•</span>
-
             All rights reserved
-
           </footer>
 
         </div>
