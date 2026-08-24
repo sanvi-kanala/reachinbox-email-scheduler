@@ -7,9 +7,12 @@ import session from "express-session";
 import passport from "./config/passport";
 import { spawn } from "child_process";
 import path from "path";
+import { PrismaClient } from "@prisma/client";
 
 import emailRoutes from "./routes/email.routes";
 import authRoutes from "./routes/auth.routes";
+
+const prisma = new PrismaClient();
 
 const app = express();
 
@@ -109,6 +112,70 @@ app.use(
 
 /*
  * ============================
+ * CREATE DEFAULT SENDER
+ * ============================
+ */
+
+async function ensureSender() {
+  const senderId =
+    "f797a161-4e5d-4426-ac2b-446611455c62";
+
+  const etherealUser =
+    process.env.ETHEREAL_USER;
+
+  const etherealPassword =
+    process.env.ETHEREAL_PASSWORD;
+
+  if (
+    !etherealUser ||
+    !etherealPassword
+  ) {
+    console.error(
+      "Ethereal credentials are missing."
+    );
+
+    return;
+  }
+
+  try {
+    const existingSender =
+      await prisma.sender.findUnique({
+        where: {
+          id: senderId,
+        },
+      });
+
+    if (existingSender) {
+      console.log(
+        "Configured sender already exists"
+      );
+
+      return;
+    }
+
+    await prisma.sender.create({
+      data: {
+        id: senderId,
+        name: "ReachInbox",
+        email: etherealUser,
+        etherealUser,
+        etherealPassword,
+      },
+    });
+
+    console.log(
+      "Default sender created successfully"
+    );
+  } catch (error) {
+    console.error(
+      "Failed to create default sender:",
+      error
+    );
+  }
+}
+
+/*
+ * ============================
  * SERVER
  * ============================
  */
@@ -119,7 +186,7 @@ const PORT =
 app.listen(
   PORT,
   "0.0.0.0",
-  () => {
+  async () => {
     console.log(
       `Server running on 0.0.0.0:${PORT}`
     );
@@ -133,11 +200,14 @@ app.listen(
     );
 
     /*
+     * Make sure the production
+     * sender exists.
+     */
+
+    await ensureSender();
+
+    /*
      * Start BullMQ worker in production.
-     *
-     * This allows us to use a single
-     * free Render Web Service instead
-     * of paying for a separate Background Worker.
      */
 
     if (isProduction) {
