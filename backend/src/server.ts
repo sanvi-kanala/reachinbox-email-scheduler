@@ -5,17 +5,14 @@ import express from "express";
 import cors from "cors";
 import session from "express-session";
 import passport from "./config/passport";
+import { spawn } from "child_process";
+import path from "path";
 
 import emailRoutes from "./routes/email.routes";
 import authRoutes from "./routes/auth.routes";
 
 const app = express();
 
-/*
- * Render runs the application behind a proxy.
- * This is required for secure session cookies
- * to work correctly in production.
- */
 app.set("trust proxy", 1);
 
 const FRONTEND_URL =
@@ -65,15 +62,9 @@ app.use(
     cookie: {
       secure: isProduction,
       httpOnly: true,
-
-      /*
-       * Vercel frontend and Render backend
-       * are different domains in production.
-       */
       sameSite: isProduction
         ? "none"
         : "lax",
-
       maxAge:
         24 * 60 * 60 * 1000,
     },
@@ -87,7 +78,6 @@ app.use(
  */
 
 app.use(passport.initialize());
-
 app.use(passport.session());
 
 /*
@@ -110,10 +100,7 @@ app.get("/health", (_req, res) => {
  * ============================
  */
 
-app.use(
-  "/auth",
-  authRoutes
-);
+app.use("/auth", authRoutes);
 
 app.use(
   "/api/emails",
@@ -144,5 +131,53 @@ app.listen(
     console.log(
       `Production mode: ${isProduction}`
     );
+
+    /*
+     * Start BullMQ worker in production.
+     *
+     * This allows us to use a single
+     * free Render Web Service instead
+     * of paying for a separate Background Worker.
+     */
+
+    if (isProduction) {
+      const workerPath = path.join(
+        __dirname,
+        "queues",
+        "email.worker.js"
+      );
+
+      console.log(
+        "Starting email worker..."
+      );
+
+      const workerProcess = spawn(
+        process.execPath,
+        [workerPath],
+        {
+          stdio: "inherit",
+          env: process.env,
+        }
+      );
+
+      workerProcess.on(
+        "error",
+        (error) => {
+          console.error(
+            "Failed to start email worker:",
+            error
+          );
+        }
+      );
+
+      workerProcess.on(
+        "exit",
+        (code) => {
+          console.log(
+            `Email worker exited with code ${code}`
+          );
+        }
+      );
+    }
   }
 );

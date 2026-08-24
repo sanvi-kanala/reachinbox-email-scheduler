@@ -17,7 +17,10 @@ redis.on("ready", () => {
 });
 
 redis.on("error", (error) => {
-  console.error("Redis error:", error);
+  console.error(
+    "Redis error:",
+    error
+  );
 });
 
 export default redis;
